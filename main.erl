@@ -1,19 +1,24 @@
 -module(main).
 
 -import(data, [get_X/0, get_Y/0]).
--export([start/0]).
+-export([start/0, run/0]).
 
+run() ->
+    {Time,_} = timer:tc(main, start, []),
+    io:format("  Elapsed time: ~w sec~n", [Time/1000000]).
 
 start() ->
     X = get_X(),
     Y = get_Y(),
+
     Model = multilayer_perceptron(),
     print_format(model, Model),
-%%    [Y_hat, _, A1, _] = forward_propagation(X, Model),
-%%    Dif = backpropagation(X, Y, Y_hat, A1, Model),
-    {Model1, Count} = train_network(Model, X, Y, 0.01, 0, 0.0000001, 0),
+
+    {Model1, Count, Loss} = train_network(Model, X, Y, 0.01, 0, 0.0000001, 0),
     print_format(model1, Model1),
-    io:format("Iteration count: ~w~n", [Count]).
+
+    io:format("  Iteration count: ~w~n", [Count]),
+    io:format("  Minimal loss: ~w~n", [Loss]).
 
 multilayer_perceptron() ->
     W1 = [[random:uniform(), random:uniform(), random:uniform()],
@@ -82,13 +87,18 @@ train_network(Model, X, Y, Learn_rate, Last_loss, Min_diff, Count) ->
 
     Current_loss = calculate_loss(X, Y, Model, Y_hat),
     NewCount = Count + 1,
-    if abs(Current_loss - Last_loss) > Min_diff->
+    if abs(Current_loss - Last_loss) > Min_diff ->
             New_loss = Current_loss,
-            io:format("min ~w~nCurr ~w~nNew ~w~n", [Min_diff, Current_loss, New_loss]),
+            if
+                Count rem 50 == 0 ->
+                    io:format("  Loss after iteration ~w: ~w~n", [Count, Current_loss]);
+                Count rem 50 /= 0 ->
+                    _ = Count
+            end,
             NewModel = {NewW1, NewB1, NewW2, NewB2},
             train_network(NewModel, X, Y, Learn_rate, New_loss, Min_diff, NewCount);
     abs(Current_loss - Last_loss) =< Min_diff->
-           {{NewW1, NewB1, NewW2, NewB2}, NewCount}
+           {{NewW1, NewB1, NewW2, NewB2}, NewCount, Current_loss}
         end.
 
     
@@ -208,4 +218,4 @@ doSumStolb(K,N,Matrix,Akk) ->
 sumElemMatrix(Matrix) -> lists:sum(lists:map(fun(X)->lists:sum(X) end, Matrix)).
 %%-----------------------------------------------------------------------------
 print_format(What ,{W1, B1, W2, B2}) ->
-    io:format("~n~p:~nw1 = ~w~nb1 = ~w~nw2 = ~w~nb2 = ~w~n", [What,W1,B1,W2,B2]).
+    io:format("  ~n  ~p:~n  w1 = ~w~n  b1 = ~w~n  w2 = ~w~n  b2 = ~w~n", [What, W1, B1, W2, B2]).
