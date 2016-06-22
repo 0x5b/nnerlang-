@@ -9,11 +9,11 @@ start() ->
     Y = get_Y(),
     Model = multilayer_perceptron(),
     print_format(model, Model),
-    [Y_hat, _, A1, _] = forward_propagation(X, Model),
-    Dif = backpropagation(X, Y, Y_hat, A1, Model),
-    Model1 = train_network(Model, Dif, -0.01),
-    print_format(model1, Model1).
-
+%%    [Y_hat, _, A1, _] = forward_propagation(X, Model),
+%%    Dif = backpropagation(X, Y, Y_hat, A1, Model),
+    {Model1, Count} = train_network(Model, X, Y, 0.01, 0, 0.0000001, 0),
+    print_format(model1, Model1),
+    io:format("Iteration count: ~w~n", [Count]).
 
 multilayer_perceptron() ->
     W1 = [[random:uniform(), random:uniform(), random:uniform()],
@@ -55,21 +55,41 @@ backpropagation(X, Y, Y_hat, A1, Model) ->
     {DW1, DB1, DW2, DB2}.
 
 
+calculate_loss(X, Y, Model, Y_hat) ->
+    {W1, _, W2, _} = Model,
+
+    Correct_logprobs = logCorrAns(Y_hat, Y),
+    Data_loss = lists:sum(Correct_logprobs),
+    Reg_loss = Data_loss + 0.01 / 2 * (sumElemMatrix(power2Matrix(W1)) + sumElemMatrix(power2Matrix(W2))),
+    1/length(X)*Reg_loss.
+
+
 %%Тренировка проходит 1 раз (просто для проверки, после проверки сделаю в бесконечном цикле до определенного уровня)
-train_network(Model, Dif, Learn_rate) ->
+train_network(Model, X, Y, Learn_rate, Last_loss, Min_diff, Count) ->
     {W1, B1, W2, B2} = Model,
 
-    {DW1, DB1, DW2, DB2} = Dif,
+    [Y_hat, _, A1, _] = forward_propagation(X, Model),
+
+    {DW1, DB1, DW2, DB2} = backpropagation(X, Y, Y_hat, A1, Model),
 
     RegDW1 = sumMatrix(DW1, mulMatrixN(DW1, 0.01)),
     RegDW2 = sumMatrix(DW2, mulMatrixN(DW2, 0.01)),
 
-    NewW1 = sumMatrix(W1, mulMatrixN(RegDW1, Learn_rate)),
-    NewB1 = sumMLists(B1, mulN(DB1, Learn_rate)),
-    NewW2 = sumMatrix(W2, mulMatrixN(RegDW2, Learn_rate)),
-    NewB2 = sumMLists(B2, mulN(DB2, Learn_rate)),
+    NewW1 = sumMatrix(W1, mulMatrixN(RegDW1, -Learn_rate)),
+    NewB1 = sumMLists(B1, mulN(DB1, -Learn_rate)),
+    NewW2 = sumMatrix(W2, mulMatrixN(RegDW2, -Learn_rate)),
+    NewB2 = sumMLists(B2, mulN(DB2, -Learn_rate)),
 
-    {NewW1, NewB1, NewW2, NewB2}.
+    Current_loss = calculate_loss(X, Y, Model, Y_hat),
+    NewCount = Count + 1,
+    if abs(Current_loss - Last_loss) > Min_diff->
+            New_loss = Current_loss,
+            io:format("min ~w~nCurr ~w~nNew ~w~n", [Min_diff, Current_loss, New_loss]),
+            NewModel = {NewW1, NewB1, NewW2, NewB2},
+            train_network(NewModel, X, Y, Learn_rate, New_loss, Min_diff, NewCount);
+    abs(Current_loss - Last_loss) =< Min_diff->
+           {{NewW1, NewB1, NewW2, NewB2}, NewCount}
+        end.
 
     
 %% Matrix список списков одинаковой длины
@@ -141,6 +161,15 @@ delta(List, Y) ->
     [X1,X2-1].
 
 
+logCorrAns(Matrix, A) -> lists:zipwith(fun(X,Y)->logLists(X, Y) end, Matrix, A).
+logLists(List, Y) when Y==0 ->
+    [X1, _] = List,
+    -math:log(X1);
+logLists(List, Y) ->
+    [_, X2] = List,
+    -math:log(X2).
+
+
 %%функция возводит каждый элемент матрицы в квадрат
 power2Matrix(M) -> lists:map(fun(X)->power2List(X) end, M).
 power2List(L) -> lists:map(fun(X)->X*X end, L).
@@ -165,6 +194,7 @@ mulN(L, N) -> lists:map(fun(X)->X*N end, L).
 sumMatrix(M1, M2) -> lists:zipwith(fun(X,Y)->sumMLists(X,Y) end, M1, M2).
 sumMLists(L1, L2) -> lists:zipwith(fun(X,Y)->X+Y end, L1, L2).
 
+%%сумма элементов столбцов
 sumByStolb(Matrix)-> 
     N=length(lists:nth(1,Matrix)), %количество столбцов
     doSumStolb(1,N,Matrix,[]).
@@ -175,6 +205,7 @@ doSumStolb(K,N,Matrix,Akk) ->
     doSumStolb(K+1,N,Matrix,[lists:sum(getK(K,Matrix,[]))|Akk]).
 
 
+sumElemMatrix(Matrix) -> lists:sum(lists:map(fun(X)->lists:sum(X) end, Matrix)).
 %%-----------------------------------------------------------------------------
 print_format(What ,{W1, B1, W2, B2}) ->
     io:format("~n~p:~nw1 = ~w~nb1 = ~w~nw2 = ~w~nb2 = ~w~n", [What,W1,B1,W2,B2]).

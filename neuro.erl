@@ -1,11 +1,13 @@
 -module(neuro).
--export([start/0,neuron/4,manager/1]).
+-export([start/0, neuron/4, manager/1]).
+%%-import(data, [get_one_X/0]).
 -define(print(S),io:fwrite(S)). % Макрос вывода русскоязычной строки. Вывод русских строк через format приводит к ошибке.
 
 
-start()-> Manager=spawn(?MODULE,manager,[[]]),
-          Manager!init,
-		  ok.
+start()-> 
+    Manager = spawn(?MODULE, manager, [[]]),
+    Manager!init,
+	ok.
 
 
 manager(Neurons) ->
@@ -14,6 +16,8 @@ manager(Neurons) ->
         % запускаем нейроны
         I1 = spawn(?MODULE, neuron, initParam()),
         I2 = spawn(?MODULE, neuron, initParam()),
+%%        register(i1, spawn(?MODULE, neuron, initParam())),
+%%        register(i2, spawn(?MODULE, neuron, initParam())),
         H1 = spawn(?MODULE, neuron, initParam()),
         H2 = spawn(?MODULE, neuron, initParam()),
         H3 = spawn(?MODULE, neuron, initParam()),
@@ -43,24 +47,36 @@ manager(Neurons) ->
         O1!{addOut, [self()]},
 
         % определение функции активации. Для простоты проверки просто +1
-        F=fun(X)->X+1 end,
+        % F = fun(X)-> X+1 end,
+        Input_Fun = fun(X) -> X-1 end,
+        Hidden_Fun = fun(X) -> math:tanh(X) end,
+        Output_Fun = fun(X) -> 1/(1 + math:exp(-X)) end,
 
         % назначение списку нейронов функции активации
-        sndTo([I1,I2,H1,H2,H3,O1],{setFunct,F}),
+        sndTo([I1, I2], {setFunct, Input_Fun}),
+        sndTo([H1, H2, H3], {setFunct, Hidden_Fun}),
+        sndTo([O1], {setFunct, Output_Fun}),
 
         % подаем на сеть данные
-        I1!{data, x1, 1},
-        I2!{data, x2, 1},
+        X1 = 0.743461176196,
+        X2 = 0.464656328377,
+        I1!{data, x1, X1},
+        I2!{data, x2, X2},
 
         % уходим на ожидание
         manager([I1, I2, H1, H2, H3, O1]);
-		{data, _, Data} -> io:format("Result is: ~w~n",[Data]),
-		                 self()!stop,
-						 manager(Neurons);
 
-		stop-> ?print("Менеджер остановлен~n"),
-		       sndTo(Neurons,stop)
-   end.
+		{data, _, Data} ->
+            io:format("Result is: ~w~n",[Data]),
+            self()!stop,
+            manager(Neurons);
+
+        {train_data, I1, I2, X1, X2} -> 
+            I1!{data, x1, X1},
+            I2!{data, x2, X2};
+
+		stop -> ?print("Менеджер остановлен~n"),
+            sndTo(Neurons, stop) end.
    
 initParam() -> [maps:new(), [], nill, maps:new()].
 
@@ -68,13 +84,13 @@ neuron(Weights, SndNList, Function, Data)->
            receive
 
 		   %добавление веса для входящей связи от другого нейрона
-		   % веса хранятся как быстрый хеш-словарь, где ключ-ссылка на входящий нейрон, а значение-вес
-			{addWeight, FromN, W}->
+		   %веса хранятся как быстрый хеш-словарь, где ключ-ссылка на входящий нейрон, а значение-вес
+			{addWeight, FromN, W} ->
 				NewWeights = maps:put(FromN, W, Weights),
 				neuron(NewWeights, SndNList, Function, Data);
 
 			% задание данному нейрону списка получателей информации
-			{addOut,ToNs}-> neuron(Weights, ToNs, Function, Data);
+			{addOut, ToNs}-> neuron(Weights, ToNs, Function, Data);
 
 			% Назначение нейрону функции активации
 			{setFunct, F}-> neuron(Weights, SndNList, F, Data);
@@ -98,7 +114,7 @@ neuron(Weights, SndNList, Function, Data)->
 
 % вычисление функции активации
 calculate(Weights, Function, Data) ->
-    Fun = fun(K, V, AccIn)-> AccIn + V * maps:get(K,Data) end,
+    Fun = fun(K, V, AccIn) -> AccIn + V * maps:get(K, Data) end,
     Function(maps:fold(Fun, 0, Weights)).
 								   
 % Рассыльщик заданного сообщения по всем процессам в заданном списке
