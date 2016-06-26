@@ -1,19 +1,26 @@
 -module(neuro).
--export([start/0, neuron/5, manager/1]).
+
+-export([run/0, start/0, neuron/5, manager/2]).
 -import(data, [get_X/0]).
+
 -define(print(S),io:fwrite(S)). % Макрос вывода русскоязычной строки. Вывод русских строк через format приводит к ошибке.
 
+run() ->
+    {Time,_} = timer:tc(neuro, start, []),
+    io:format("  Elapsed time: ~w sec~n", [Time/1000000]).
 
 start()-> 
-    Manager = spawn(?MODULE, manager, [[]]),
+    Manager = spawn(?MODULE, manager, [[],[]]),
     Manager ! init,
     X = get_X(),
-    complex_work(X, Manager),
-%%    Manager ! {work, X1, X2},
+    [H|T]=X,
+    [X1, X2]=H,
+    io:format("~nX1=~w   X2=~w~n", [X1,X2]),
+    Manager ! {work, X1, X2, T},
     ok111.
 
 
-manager(Neurons) ->
+manager(Neurons, IData) ->
    receive
       init->
         % запускаем нейроны
@@ -84,29 +91,28 @@ manager(Neurons) ->
         sndTo([O1, O2], {setFunct, Gen_Fun}),
         sndTo([P1], {setFunct, Output_Fun}),
 
-        % подаем на сеть данные
-%%        X1 = 0.743461176196,
-%%        X2 = 0.464656328377,
-%%        I1!{data, x1, X1},
-%%        I2!{data, x2, X2},
-
         % уходим на ожидание
-        manager([I1, I2, H1, H2, H3, O1, O2, P1]);
+        manager([I1, I2, H1, H2, H3, O1, O2, P1], IData);
 
 		{data, _, Data, _} ->
             [C1|[C2|_]] = Data,
-            io:format("Prediction is: ~w~n",[index_of_max(C1, C2)]),
-%%            self() ! stop,
-            manager(Neurons);
+%%            io:format("Prediction is: ~w~n",[index_of_max(C1, C2)]),
+            io:format("~w, ",[index_of_max(C1, C2)]),
+			if IData /= [] ->
+					[H|T]=IData,
+					[X1,X2]=H,
+					self() ! {work, X1, X2,T};
+			   IData ==[] -> self()!stop
+			end,
+            manager(Neurons, IData);
 
-       {work, X1, X2} -> 
+       {work, X1, X2, T} -> 
             [I1|[I2|_]] = Neurons, 
-%%            complex_work(get_X(), I1, I2, Neurons),
-            
- %%           [X1|[X2|_]] = get_one_X(),
-            I1 ! {data, x1, X1, Neurons},
-            I2 ! {data, x2, X2, Neurons},
-            manager(Neurons);
+			[P1|_] = lists:reverse(Neurons),
+
+            I1 ! {data, x1, X1, P1},
+            I2 ! {data, x2, X2, P1},
+            manager(Neurons, T);
 
 		stop -> ?print("Менеджер остановлен~n"),
             sndTo(Neurons, stop) end.
@@ -134,8 +140,7 @@ neuron(Weights, SndNList, Function, Data, Bias)->
 			{setFunct, F}-> neuron(Weights, SndNList, F, Data, Bias);
 
 			% прием и обработка данных от нейрона из предыдущего слоя
-			{data, FromN, D, Neurons}->
-                [P1|_] = lists:reverse(Neurons),
+			{data, FromN, D, P1}->
                 NewData = maps:put(FromN, D, Data),
                 Size = maps:size(Weights),
                 case maps:size(NewData) of
@@ -143,11 +148,11 @@ neuron(Weights, SndNList, Function, Data, Bias)->
                         if
                             self() == P1 ->
                                 Result = other_calculate(Weights, Function, NewData, Bias),
-                                sndTo(SndNList, {data, self(), Result, Neurons}),
+                                sndTo(SndNList, {data, self(), Result, P1}),
                                 neuron(Weights, SndNList, Function, maps:new(), Bias); 
                             self() /= P1 -> 
                                 Result = calculate(Weights, Function, NewData, Bias),
-                                sndTo(SndNList, {data, self(), Result, Neurons}),
+                                sndTo(SndNList, {data, self(), Result, P1}),
                                 neuron(Weights, SndNList, Function, maps:new(), Bias) 
                         end;
                         % ждем, пока не поступят все данные
@@ -160,12 +165,12 @@ neuron(Weights, SndNList, Function, Data, Bias)->
 % вычисление функции активации
 calculate(Weights, Function, Data, Bias) ->
     Fun = fun(K, V, AccIn) -> AccIn + V*maps:get(K, Data) end,
-    Function(maps:fold(Fun, 0, Weights)) + Bias.
+    Function(maps:fold(Fun, 0, Weights) + Bias). 
+%%    io:format("~nS=  ~w~n", [maps:fold(Fun, 0, Weights) + Bias]),
+%%    io:format("F=  ~w~n", [X]),
 
 other_calculate(Weights, Function, Data, Bias) ->
     [X1|[X2|_]] = maps:values(Data),
-    [Y1|[Y2|_]] = Function(X1, X2),
-    io:format("~n~w   ~w~n", [Y1,Y2]),
     Function(X1, X2).
     
 % Рассыльщик заданного сообщения по всем процессам в заданном списке
@@ -175,9 +180,13 @@ sndTo([H|T],M) -> H!M, sndTo(T,M).
 index_of_max(X, Y) when X>Y -> 0;
 index_of_max(X, Y) -> 1.
 
-complex_work(M, Manager) -> lists:map(fun(X) -> send_one_X(X, Manager) end, M).
-send_one_X(X, Manager) ->
-    [X1|[X2|_]] = X,
-    Manager ! {work, X1, X2}.
-
-    
+my_print(I1, I2, H1, H2, H3, O1, O2, P1)->
+    io:format("
+    ~nI1 = ~w~n
+    I2 = ~w~n
+    H1 = ~w~n
+    H2 = ~w~n
+    H3 = ~w~n
+    O1 = ~w~n
+    O2 = ~w~n
+    P1 = ~w~n", [I1, I2, H1, H2, H3, O1, O2, P1]).
