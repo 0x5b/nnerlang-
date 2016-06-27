@@ -11,11 +11,20 @@ run() ->
 
 start()-> 
     Manager = spawn(?MODULE, manager, [[],[]]),
+    ?print("Менеджер запущен~n"),
     Manager ! init,
     X = get_X(),
-    [H|T]=X,
+	X1i=getKth(1,X,[]),
+	X2i=getKth(2,X,[]),
+
+    Max1=lists:max(X1i)+0.05,
+	Min1=lists:min(X1i)-0.05,
+	Max2=lists:max(X2i)+0.05,
+	Min2=lists:min(X2i)-0.05,
+	Test_data = generate(Min1,Min2,Max1,Max2,Min2,[]),
+
+    [H|T] = Test_data,
     [X1, X2]=H,
-    io:format("~nX1=~w   X2=~w~n", [X1,X2]),
     Manager ! {work, X1, X2, T},
     ok111.
 
@@ -97,7 +106,7 @@ manager(Neurons, IData) ->
 		{data, _, Data, _} ->
             [C1|[C2|_]] = Data,
 %%            io:format("Prediction is: ~w~n",[index_of_max(C1, C2)]),
-            io:format("~w, ",[index_of_max(C1, C2)]),
+%%            io:format("~w, ",[index_of_max(C1, C2)]),
 			if IData /= [] ->
 					[H|T]=IData,
 					[X1,X2]=H,
@@ -190,3 +199,19 @@ my_print(I1, I2, H1, H2, H3, O1, O2, P1)->
     O1 = ~w~n
     O2 = ~w~n
     P1 = ~w~n", [I1, I2, H1, H2, H3, O1, O2, P1]).
+
+getKth(_,[],Akk) ->
+    lists:reverse(Akk);
+getKth(K,[H|T],Akk) ->
+    getKth(K,T,[lists:nth(K,H)|Akk]).
+%----------------------------------------
+
+ generate(A,B,C,D,Min2,Akk) ->
+    if
+    A>C -> Akk;
+    A=<C ->
+        if
+            B=<D -> generate(A,B+0.01,C,D,Min2,[[A,B]|Akk]);
+            B>D -> generate(A+0.01,Min2,C,D,Min2,[[A,B]|Akk])
+        end
+    end.
